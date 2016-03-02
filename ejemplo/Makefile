@@ -1,4 +1,4 @@
-all: src/*.cpp src/*.h src/*.ino
+all:
 	ino build -d ../DuinoBot/ -m DuinoBotv1x
 	ino upload -d ../DuinoBot/ -m DuinoBotv1x
 
