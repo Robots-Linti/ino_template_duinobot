@@ -188,11 +188,6 @@ void checkDigitalInputs(void)
  */
 void setPinModeCallback(byte pin, int mode)
 {
-//  if (pinConfig[pin] == I2C && isI2CEnabled && mode != I2C) {
-//    // disable i2c so pins can be used for other functions
-//    // the following if statements should reconfigure the pins properly
-//    disableI2CPins();
-//  }
   if (IS_PIN_SERVO(pin) && mode != SERVO && servos[PIN_TO_SERVO(pin)].attached()) {
     servos[PIN_TO_SERVO(pin)].detach();
   }
@@ -343,105 +338,27 @@ void sysexCallback(byte command, byte argc, byte *argv)
   byte slaveRegister;
   byte data;
   unsigned int delayTime; 
-  
-  switch(command) {
 
-//  case I2C_REQUEST:
-//    mode = argv[1] & I2C_READ_WRITE_MODE_MASK;
-//    if (argv[1] & I2C_10BIT_ADDRESS_MODE_MASK) {
-//      Firmata.sendString("10-bit addressing mode is not yet supported");
-//      return;
-//    }
-//    else {
-//      slaveAddress = argv[0];
-//    }
-//
-//    switch(mode) {
-//    case I2C_WRITE:
-//      Wire.beginTransmission(slaveAddress);
-//      for (byte i = 2; i < argc; i += 2) {
-//        data = argv[i] + (argv[i + 1] << 7);
-//        #if ARDUINO >= 100
-//        Wire.write(data);
-//        #else
-//        Wire.send(data);
-//        #endif
-//      }
-//      Wire.endTransmission();
-//      delayMicroseconds(70);
-//      break;
-//    case I2C_READ:
-//      if (argc == 6) {
-//        // a slave register is specified
-//        slaveRegister = argv[2] + (argv[3] << 7);
-//        data = argv[4] + (argv[5] << 7);  // bytes to read
-//        readAndReportData(slaveAddress, (int)slaveRegister, data);
-//      }
-//      else {
-//        // a slave register is NOT specified
-//        data = argv[2] + (argv[3] << 7);  // bytes to read
-//        readAndReportData(slaveAddress, (int)REGISTER_NOT_SPECIFIED, data);
-//      }
-//      break;
-//    case I2C_READ_CONTINUOUSLY:
-//      if ((queryIndex + 1) >= MAX_QUERIES) {
-//        // too many queries, just ignore
-//        Firmata.sendString("too many queries");
-//        break;
-//      }
-//      queryIndex++;
-//      query[queryIndex].addr = slaveAddress;
-//      query[queryIndex].reg = argv[2] + (argv[3] << 7);
-//      query[queryIndex].bytes = argv[4] + (argv[5] << 7);
-//      break;
-//    case I2C_STOP_READING:
-//	  byte queryIndexToSkip;      
-//      // if read continuous mode is enabled for only 1 i2c device, disable
-//      // read continuous reporting for that device
-//      if (queryIndex <= 0) {
-//        queryIndex = -1;        
-//      } else {
-//        // if read continuous mode is enabled for multiple devices,
-//        // determine which device to stop reading and remove it's data from
-//        // the array, shifiting other array data to fill the space
-//        for (byte i = 0; i < queryIndex + 1; i++) {
-//          if (query[i].addr = slaveAddress) {
-//            queryIndexToSkip = i;
-//            break;
-//          }
-//        }
-//        
-//        for (byte i = queryIndexToSkip; i<queryIndex + 1; i++) {
-//          if (i < MAX_QUERIES) {
-//            query[i].addr = query[i+1].addr;
-//            query[i].reg = query[i+1].addr;
-//            query[i].bytes = query[i+1].bytes; 
-//          }
-//        }
-//        queryIndex--;
-//      }
-//      break;
-//    default:
-//      break;
-//    }
-//    break;
-//  case I2C_CONFIG:
-//    delayTime = (argv[0] + (argv[1] << 7));
-//
-//    if(delayTime > 0) {
-//      i2cReadDelayTime = delayTime;
-//    }
-//
-//    if (!isI2CEnabled) {
-//      enableI2CPins();
-//    }
-//    
-//    break;
+  if (command == BROADCAST_REPORT){
+    // START (0xF0) PIN END (0xF7)
+    // El report es el único comando que no requiere ROBOT_ID
+    Serial1.write(START_SYSEX);
+    Serial1.write(BROADCAST_REPORT);
+    Serial1.write(ROBOT_ID);
+    Serial1.write(END_SYSEX);
+    return;
+  }
 
+  if (argv[argc - 1] != ROBOT_ID){
+    // Si no es para este robot ignorar
+    return;
+  }
+
+  switch(command){
   case SERVO_CONFIG:
     if(argc > 4) {
       // these vars are here for clarity, they'll optimized away by the compiler
-      if ((argc >= 6 && argv[5] == ROBOT_ID ) || argc < 6){
+      if (argc >= 6){
           byte pin = argv[0];
           int minPulse = argv[1] + (argv[2] << 7);
           int maxPulse = argv[3] + (argv[4] << 7);
@@ -500,7 +417,14 @@ void sysexCallback(byte command, byte argc, byte *argv)
       }
       Serial1.write(127);
     }
+    Serial1.write(ROBOT_ID);
     Serial1.write(END_SYSEX);
+    break;
+  case SET_PIN_MODE:
+  // START (0xF0) SET_PIN_MODE PIN MODE ROBOTID END (0xF7)
+    if (argc > 2){
+      setPinModeCallback(argv[0], argv[1]);
+    }
     break;
   case PIN_STATE_QUERY:
     if (argc > 0) {
@@ -523,43 +447,42 @@ void sysexCallback(byte command, byte argc, byte *argv)
     for (byte pin=0; pin < TOTAL_PINS; pin++) {
       Serial1.write(IS_PIN_ANALOG(pin) ? PIN_TO_ANALOG(pin) : 127);
     }
+    Serial1.write(ROBOT_ID);
     Serial1.write(END_SYSEX);
     break;
-
   case MOTOR_COMMAND:
-  //  START (0xF0) MOTOR_0 (0x01) SET_SPEED (0-127) END (0xF7)
+  //  START (0xF0) MOTOR SET_SPEED_0 (0-127) SET_SPEED_1 (0-127)
+  //  SET_DIR_0 (0-1) SET_DIR_1 (0-1) ROBOT_ID (0-127) END (0xF7)
     if(argc>4){
-      if(argv[4]==ROBOT_ID){
-         if(argv[2])
-         {
-           motor0.setSpeed(argv[0]);        
-         }else{
-           motor0.setSpeed(-argv[0]);
-         }
-         if(argv[3])
-         {
-           motor1.setSpeed(-argv[1]);        
-         }else{
-           motor1.setSpeed(argv[1]);
-         }
+      if(argv[2])
+      {
+        motor0.setSpeed(argv[0]);        
+      }else{
+        motor0.setSpeed(-argv[0]);
+      }
+      if(argv[3])
+      {
+        motor1.setSpeed(-argv[1]);        
+      }else{
+        motor1.setSpeed(argv[1]);
       }
     }
   break;    
   case MOTOR_0_COMMAND:
-  //  START (0xF0) MOTOR_0 (0x01) SET_SPEED (0-127) END (0xF7)
-    if(argc>1 && argv[1]==ROBOT_ID){
+  //  START (0xF0) MOTOR_0 (0x01) SET_SPEED (0-127) ROBOT_ID (0-127) END (0xF7)
+    if(argc > 1){
       motor0.setSpeed(argv[0]);
     }
   break;
   case MOTOR_1_COMMAND:
-  //  START (0xF0) MOTOR_1 (0x02) SET_SPEED (0-127) END (0xF7)
-    if(argc>1 && argv[1]==ROBOT_ID){
+  //  START (0xF0) MOTOR_1 (0x02) SET_SPEED (0-127) ROBOT_ID (0-127) END (0xF7)
+    if(argc > 1){
       motor1.setSpeed(argv[0]);
     }
   break;  
   case PING_COMMAND:
   //  START (0xF0) PING (0x03) END (0xF7)
-    if(argc>0 && argv[0]==ROBOT_ID){
+    if(argc>0){
        measure_sample=(int)Ping1.measureCM();
        Serial1.write(START_SYSEX);
        Serial1.write(PING_COMMAND);    
@@ -570,21 +493,21 @@ void sysexCallback(byte command, byte argc, byte *argv)
     } 
   break;    
   case TONE_COMMAND:
-  //  START (0xF0) TONE (0x05) FREQ_HI FREQ_LO <DURATION> END (0xF7)
-    if(argc>3 && argv[3]==ROBOT_ID)
+  //  START (0xF0) TONE (0x05) FREQ_HI FREQ_LO <DURATION> ROBOT_ID (0-127) END (0xF7)
+    if(argc>3)
     {
       tone(23, 128*argv[0]+argv[1], argv[2]);
-    }else if(argc>2 && argv[2]==ROBOT_ID)
+    }else if(argc>2)
     {
       tone(23, 128*argv[0]+argv[1]);
-    }else if(argc==1 && argv[0]==ROBOT_ID)
+    }else if(argc==1)
     {
       noTone(23);
     }  
   break;    
   case ANALOG_INPUT_REQUEST:
-  //  START (0xF0) CHANNEL SAMPLES END (0xF7)
-  if(argc>2 && argv[2]==ROBOT_ID)
+  //  START (0xF0) ANALOG_INPUT_REQUEST CHANNEL SAMPLES ROBOT_ID (0-127) END (0xF7)
+  if(argc>2)
   {
     unsigned int acum_aux=0;
     for(int i=0;i<argv[1];++i)
@@ -601,8 +524,8 @@ void sysexCallback(byte command, byte argc, byte *argv)
   }
   break; 
   case DIGITAL_INPUT_REQUEST:
-  //  START (0xF0) PIN END (0xF7)
-  if(argc>1 && argv[1]==ROBOT_ID)
+  //  START (0xF0) DIGITAL_INPUT_REQUEST PIN ROBOT_ID (0-127) END (0xF7)
+  if(argc>1)
   {
     Serial1.write(START_SYSEX);
     Serial1.write(DIGITAL_INPUT_REQUEST);    
@@ -612,23 +535,15 @@ void sysexCallback(byte command, byte argc, byte *argv)
   }
   break;   
   case CHANGE_ROBOT_ID:
-  if(argc>1 && argv[1]==ROBOT_ID)
+  if(argc>1)
   {
       ROBOT_ID=argv[0];
       EEPROM.write(0,ROBOT_ID);   
   }
   break; 
-  case BROADCAST_REPORT:
-  //  START (0xF0) PIN END (0xF7)
-    Serial1.write(START_SYSEX);
-    Serial1.write(BROADCAST_REPORT);    
-    Serial1.write(ROBOT_ID);           
-    Serial1.write(END_SYSEX); 
-  break;  
-  
    case MOVE_SERVO:
-  // START (0xF0) MOVE_SERVO(0x0A) PIN ANGLE_HI(128-255) ANGLE_LO(0-127) END (0xF7)
-   if(argc>3 && argv[3]==ROBOT_ID){
+  // START (0xF0) MOVE_SERVO(0x0A) PIN ANGLE_HI(128-255) ANGLE_LO(0-127) ROBOT_ID(0-127) END (0xF7)
+   if(argc>3){
         if (IS_PIN_SERVO(argv[0])) {        
             servos[PIN_TO_SERVO(argv[0])].write(argv[1]*128+argv[2]);
         }
@@ -715,12 +630,13 @@ void setup()
   motor1.setZeroZone(1);
 
   Firmata.setFirmwareVersion(2, 2);
-
+/*
   Firmata.attach(ANALOG_MESSAGE, analogWriteCallback);
   Firmata.attach(DIGITAL_MESSAGE, digitalWriteCallback);
   Firmata.attach(REPORT_ANALOG, reportAnalogCallback);
   Firmata.attach(REPORT_DIGITAL, reportDigitalCallback);
   Firmata.attach(SET_PIN_MODE, setPinModeCallback);
+*/
   Firmata.attach(START_SYSEX, sysexCallback);
   
 
