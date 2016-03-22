@@ -420,8 +420,8 @@ void sysexCallback(byte command, byte argc, byte *argv)
     Serial1.write(ROBOT_ID);
     Serial1.write(END_SYSEX);
     break;
-  case SET_PIN_MODE:
-  // START (0xF0) SET_PIN_MODE PIN MODE ROBOTID END (0xF7)
+  case EXTENDED_PIN_MODE:
+  // START (0xF0) EXTENDED_PIN_MODE PIN MODE ROBOTID END (0xF7)
     if (argc > 2){
       setPinModeCallback(argv[0], argv[1]);
     }
@@ -438,6 +438,7 @@ void sysexCallback(byte command, byte argc, byte *argv)
 	if (pinState[pin] & 0xFF80) Serial1.write((byte)(pinState[pin] >> 7) & 0x7F);
 	if (pinState[pin] & 0xC000) Serial1.write((byte)(pinState[pin] >> 14) & 0x7F);
       }
+      Serial1.write(ROBOT_ID);
       Serial1.write(END_SYSEX);
     }
     break;
