@@ -50,6 +50,7 @@
 #define CHANGE_ROBOT_ID 0x08
 #define BROADCAST_REPORT 0x09
 #define MOVE_SERVO 0x0A
+#define EXTENDED_PIN_MODE       0x0B // Establece el modo de un pin específico del robot
 //end DuinoBot
 
 // extended command set using sysex (0-127/0x00-0x7F)

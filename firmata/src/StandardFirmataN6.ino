@@ -29,12 +29,42 @@
  * TODO: use Program Control to load stored profiles from EEPROM
  */
 
+#ifndef MOTOR_COMMAND
+//begin DuinoBot
+#define MOTOR_0_COMMAND 0x01
+#define MOTOR_1_COMMAND 0x02
+#define PING_COMMAND 0x03
+#define MOTOR_COMMAND 0x04
+#define TONE_COMMAND 0x05
+#define ANALOG_INPUT_REQUEST 0x06
+#define DIGITAL_INPUT_REQUEST 0x07
+#define CHANGE_ROBOT_ID 0x08
+#define BROADCAST_REPORT 0x09
+#define MOVE_SERVO 0x0A
+#define EXTENDED_PIN_MODE       0x0B // Establece el modo de un pin específico del robot
+//end DuinoBot
+#endif
+
 #include "../lib/Servo/Servo.h"
 //#include <Wire.h>
 #include "../lib/Firmata/Firmata.h"
 #include "../lib/DCMotor/DCMotor.h"
 #include "Ping.h"
 #include "../lib/EEPROM/EEPROM.h"
+
+/* --------------------------------------------------------------------*/
+// Multiplo N6
+#if   defined(__AVR_ATmega32U4__)
+#define FIRMATA_SERIAL Serial1
+
+// Multiplo N6 Max
+#elif defined(__AVR_ATmega1284P__)
+#define FIRMATA_SERIAL Serial
+
+#else
+    #error "No serial port definition for this board in StandardFirmata"
+#endif
+/* ---------------------------------------------------------------------*/
 
 // move the following defines to Firmata.h?
 #define I2C_WRITE B00000000
@@ -158,7 +188,7 @@ void outputPort(byte portNumber, byte portValue, byte forceSend)
 
 /* -----------------------------------------------------------------------------
  * check all the active digital inputs for change of state, then add any events
- * to the Serial output queue using Serial1.print() */
+ * to the Serial output queue using FIRMATA_SERIAL.print() */
 void checkDigitalInputs(void)
 {
   /* Using non-looping code allows constants to be given to readPort().
@@ -191,6 +221,7 @@ void setPinModeCallback(byte pin, int mode)
   if (IS_PIN_SERVO(pin) && mode != SERVO && servos[PIN_TO_SERVO(pin)].attached()) {
     servos[PIN_TO_SERVO(pin)].detach();
   }
+
   if (IS_PIN_ANALOG(pin)) {
     reportAnalogCallback(PIN_TO_ANALOG(pin), mode == ANALOG ? 1 : 0); // turn on/off reporting
   }
@@ -390,35 +421,35 @@ void sysexCallback(byte command, byte argc, byte *argv)
     }
     break;
   case CAPABILITY_QUERY:
-    Serial1.write(START_SYSEX);
-    Serial1.write(CAPABILITY_RESPONSE);
+    FIRMATA_SERIAL.write(START_SYSEX);
+    FIRMATA_SERIAL.write(CAPABILITY_RESPONSE);
     for (byte pin=0; pin < TOTAL_PINS; pin++) {
       if (IS_PIN_DIGITAL(pin)) {
-        Serial1.write((byte)INPUT);
-        Serial1.write(1);
-        Serial1.write((byte)OUTPUT);
-        Serial1.write(1);
+        FIRMATA_SERIAL.write((byte)INPUT);
+        FIRMATA_SERIAL.write(1);
+        FIRMATA_SERIAL.write((byte)OUTPUT);
+        FIRMATA_SERIAL.write(1);
       }
       if (IS_PIN_ANALOG(pin)) {
-        Serial1.write(ANALOG);
-        Serial1.write(10);
+        FIRMATA_SERIAL.write(ANALOG);
+        FIRMATA_SERIAL.write(10);
       }
       if (IS_PIN_PWM(pin)) {
-        Serial1.write(PWM);
-        Serial1.write(8);
+        FIRMATA_SERIAL.write(PWM);
+        FIRMATA_SERIAL.write(8);
       }
       if (IS_PIN_SERVO(pin)) {
-        Serial1.write(SERVO);
-        Serial1.write(14);
+        FIRMATA_SERIAL.write(SERVO);
+        FIRMATA_SERIAL.write(14);
       }
       if (IS_PIN_I2C(pin)) {
-        Serial1.write(I2C);
-        Serial1.write(1);  // to do: determine appropriate value 
+        FIRMATA_SERIAL.write(I2C);
+        FIRMATA_SERIAL.write(1);  // to do: determine appropriate value 
       }
-      Serial1.write(127);
+      FIRMATA_SERIAL.write(127);
     }
-    Serial1.write(ROBOT_ID);
-    Serial1.write(END_SYSEX);
+    FIRMATA_SERIAL.write(ROBOT_ID);
+    FIRMATA_SERIAL.write(END_SYSEX);
     break;
   case EXTENDED_PIN_MODE:
   // START (0xF0) EXTENDED_PIN_MODE PIN MODE ROBOTID END (0xF7)
@@ -429,27 +460,27 @@ void sysexCallback(byte command, byte argc, byte *argv)
   case PIN_STATE_QUERY:
     if (argc > 0) {
       byte pin=argv[0];
-      Serial1.write(START_SYSEX);
-      Serial1.write(PIN_STATE_RESPONSE);
-      Serial1.write(pin);
+      FIRMATA_SERIAL.write(START_SYSEX);
+      FIRMATA_SERIAL.write(PIN_STATE_RESPONSE);
+      FIRMATA_SERIAL.write(pin);
       if (pin < TOTAL_PINS) {
-        Serial1.write((byte)pinConfig[pin]);
-	Serial1.write((byte)pinState[pin] & 0x7F);
-	if (pinState[pin] & 0xFF80) Serial1.write((byte)(pinState[pin] >> 7) & 0x7F);
-	if (pinState[pin] & 0xC000) Serial1.write((byte)(pinState[pin] >> 14) & 0x7F);
+        FIRMATA_SERIAL.write((byte)pinConfig[pin]);
+	FIRMATA_SERIAL.write((byte)pinState[pin] & 0x7F);
+	if (pinState[pin] & 0xFF80) FIRMATA_SERIAL.write((byte)(pinState[pin] >> 7) & 0x7F);
+	if (pinState[pin] & 0xC000) FIRMATA_SERIAL.write((byte)(pinState[pin] >> 14) & 0x7F);
       }
-      Serial1.write(ROBOT_ID);
-      Serial1.write(END_SYSEX);
+      FIRMATA_SERIAL.write(ROBOT_ID);
+      FIRMATA_SERIAL.write(END_SYSEX);
     }
     break;
   case ANALOG_MAPPING_QUERY:
-    Serial1.write(START_SYSEX);
-    Serial1.write(ANALOG_MAPPING_RESPONSE);
+    FIRMATA_SERIAL.write(START_SYSEX);
+    FIRMATA_SERIAL.write(ANALOG_MAPPING_RESPONSE);
     for (byte pin=0; pin < TOTAL_PINS; pin++) {
-      Serial1.write(IS_PIN_ANALOG(pin) ? PIN_TO_ANALOG(pin) : 127);
+      FIRMATA_SERIAL.write(IS_PIN_ANALOG(pin) ? PIN_TO_ANALOG(pin) : 127);
     }
-    Serial1.write(ROBOT_ID);
-    Serial1.write(END_SYSEX);
+    FIRMATA_SERIAL.write(ROBOT_ID);
+    FIRMATA_SERIAL.write(END_SYSEX);
     break;
   case MOTOR_COMMAND:
   //  START (0xF0) MOTOR SET_SPEED_0 (0-127) SET_SPEED_1 (0-127)
@@ -485,25 +516,25 @@ void sysexCallback(byte command, byte argc, byte *argv)
   //  START (0xF0) PING (0x03) END (0xF7)
     if(argc>0){
        measure_sample=(int)Ping1.measureCM();
-       Serial1.write(START_SYSEX);
-       Serial1.write(PING_COMMAND);    
-       Serial1.write((measure_sample)>>7);
-       Serial1.write((measure_sample)%128);
-       Serial1.write(ROBOT_ID);       
-       Serial1.write(END_SYSEX);   
+       FIRMATA_SERIAL.write(START_SYSEX);
+       FIRMATA_SERIAL.write(PING_COMMAND);    
+       FIRMATA_SERIAL.write((measure_sample)>>7);
+       FIRMATA_SERIAL.write((measure_sample)%128);
+       FIRMATA_SERIAL.write(ROBOT_ID);       
+       FIRMATA_SERIAL.write(END_SYSEX);   
     } 
   break;    
   case TONE_COMMAND:
   //  START (0xF0) TONE (0x05) FREQ_HI FREQ_LO <DURATION> ROBOT_ID (0-127) END (0xF7)
     if(argc>3)
     {
-      tone(23, 128*argv[0]+argv[1], argv[2]);
+      tone(SPEAKER, 128*argv[0]+argv[1], argv[2]);
     }else if(argc>2)
     {
-      tone(23, 128*argv[0]+argv[1]);
+      tone(SPEAKER, 128*argv[0]+argv[1]);
     }else if(argc==1)
     {
-      noTone(23);
+      noTone(SPEAKER);
     }  
   break;    
   case ANALOG_INPUT_REQUEST:
@@ -516,25 +547,25 @@ void sysexCallback(byte command, byte argc, byte *argv)
      acum_aux+=analogRead(argv[0]);
    }
     acum_aux /= argv[1];
-    Serial1.write(START_SYSEX);
-    Serial1.write(ANALOG_INPUT_REQUEST);    
-    Serial1.write((acum_aux)>>7);
-    Serial1.write((acum_aux)%128);
-    Serial1.write(ROBOT_ID);           
-    Serial1.write(END_SYSEX);     
+    FIRMATA_SERIAL.write(START_SYSEX);
+    FIRMATA_SERIAL.write(ANALOG_INPUT_REQUEST);    
+    FIRMATA_SERIAL.write((acum_aux)>>7);
+    FIRMATA_SERIAL.write((acum_aux)%128);
+    FIRMATA_SERIAL.write(ROBOT_ID);           
+    FIRMATA_SERIAL.write(END_SYSEX);     
   }
   break; 
   case DIGITAL_INPUT_REQUEST:
   //  START (0xF0) DIGITAL_INPUT_REQUEST PIN ROBOT_ID (0-127) END (0xF7)
   if(argc>1)
   {
-    Serial1.write(START_SYSEX);
-    Serial1.write(DIGITAL_INPUT_REQUEST);    
-    Serial1.write(digitalRead(argv[0]));
-    Serial1.write(ROBOT_ID);           
-    Serial1.write(END_SYSEX);     
+    FIRMATA_SERIAL.write(START_SYSEX);
+    FIRMATA_SERIAL.write(DIGITAL_INPUT_REQUEST);    
+    FIRMATA_SERIAL.write(digitalRead(argv[0]));
+    FIRMATA_SERIAL.write(ROBOT_ID);           
+    FIRMATA_SERIAL.write(END_SYSEX);     
   }
-  break;   
+  break;
   case CHANGE_ROBOT_ID:
   if(argc>1)
   {
@@ -588,7 +619,7 @@ void sysexCallback(byte command, byte argc, byte *argv)
 
 void systemResetCallback()
 {
-  // initialize a defalt state
+  // initialize a default state
   // TODO: option to load config from EEPROM instead of default
 //  if (isI2CEnabled) {
 //  	disableI2CPins();
@@ -626,6 +657,10 @@ void systemResetCallback()
 void setup() 
 {
   byte i;
+  #if defined(__AVR_ATmega1284P__)
+  TCCR1A = TCCR1A & B11111000 | B00000001;
+  TCCR1B = TCCR1B & B11111000 | B00000001;
+  #endif
 
   motor0.setZeroZone(1);
   motor1.setZeroZone(1);
@@ -671,7 +706,9 @@ void setup()
      EEPROM.write(0,ROBOT_ID);
   }
 
-  Firmata.begin(57600);
+  FIRMATA_SERIAL.begin(57600);
+  Firmata.begin(FIRMATA_SERIAL);
+  Firmata.blinkVersion();
 
   /* send digital inputs to set the initial state on the host computer,
    * since once in the loop(), this firmware will only send on change */
@@ -683,41 +720,11 @@ void setup()
 /*==============================================================================
  * LOOP()
  *============================================================================*/
-void loop() 
+void loop()
 {
-  byte pin, analogPin;
-
-  /* DIGITALREAD - as fast as possible, check for changes and output them to the
-   * FTDI buffer using Serial1.print()  */
-  checkDigitalInputs();  
-
   /* SERIALREAD - processing incoming messagse as soon as possible, while still
    * checking digital inputs.  */
   while(Firmata.available())
     Firmata.processInput();
 
-  /* SEND FTDI WRITE BUFFER - make sure that the FTDI buffer doesn't go over
-   * 60 bytes. use a timer to sending an event character every 4 ms to
-   * trigger the buffer to dump. */
-
-  currentMillis = millis();
-  if (currentMillis - previousMillis > samplingInterval) {
-    previousMillis += samplingInterval;
-    /* ANALOGREAD - do all analogReads() at the configured sampling interval */
-    for(pin=0; pin<TOTAL_PINS; pin++) {
-      if (IS_PIN_ANALOG(pin) && pinConfig[pin] == ANALOG) {
-        analogPin = PIN_TO_ANALOG(pin);
-        if (analogInputsToReport & (1 << analogPin)) {
-          Firmata.sendAnalog(analogPin, analogRead(analogPin));
-        }
-      }
-    }
-    // report i2c data for all device with read continuous mode enabled
-//    if (queryIndex > -1) {
-//      for (byte i = 0; i < queryIndex + 1; i++) {
-//        readAndReportData(query[i].addr, query[i].reg, query[i].bytes);
-//      }
-//    }
-
-  }
 }
